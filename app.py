@@ -1,5 +1,5 @@
 import os
-import anthropic
+import google.generativeai as genai
 from flask import Flask, request, abort
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import (
@@ -17,15 +17,11 @@ configuration = Configuration(
 )
 handler = WebhookHandler(os.environ['LINE_CHANNEL_SECRET'])
 
-claude = anthropic.Anthropic(api_key=os.environ['ANTHROPIC_API_KEY'])
+genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+model = genai.GenerativeModel('gemini-1.5-flash')
 
 def get_aircraft_info(aircraft_name):
-    response = claude.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=1000,
-        messages=[{
-            "role": "user",
-            "content": f"""ให้ข้อมูลเครื่องบิน "{aircraft_name}" เป็นภาษาไทย ในรูปแบบ JSON ดังนี้:
+    response = model.generate_content(f"""ให้ข้อมูลเครื่องบิน "{aircraft_name}" เป็นภาษาไทย ในรูปแบบ JSON ดังนี้:
 {{
   "name": "ชื่อเต็มรุ่น",
   "manufacturer": "ผู้ผลิต",
@@ -47,10 +43,8 @@ def get_aircraft_info(aircraft_name):
   "image_search": "คำค้นหารูปภาพภาษาอังกฤษ",
   "found": true
 }}
-ตอบเฉพาะ JSON เท่านั้น"""
-        }]
-    )
-    text = response.content[0].text.strip()
+ตอบเฉพาะ JSON เท่านั้น ไม่ต้องมี markdown""")
+    text = response.text.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
@@ -133,18 +127,10 @@ def handle_message(event):
         line_bot_api = MessagingApi(api_client)
         try:
             info = get_aircraft_info(user_text)
-            if not info.get('found', True):
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(
-                        reply_token=event.reply_token,
-                        messages=[TextMessage(text=f"❌ ไม่พบข้อมูลเครื่องบิน '{user_text}'\n\nลองพิมพ์ชื่อรุ่น เช่น:\n• Boeing 747\n• F-16\n• Airbus A380")]
-                    )
-                )
-            else:
-                flex_msg = create_flex_message(info)
-                line_bot_api.reply_message(
-                    ReplyMessageRequest(reply_token=event.reply_token, messages=[flex_msg])
-                )
+            flex_msg = create_flex_message(info)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(reply_token=event.reply_token, messages=[flex_msg])
+            )
         except Exception as e:
             line_bot_api.reply_message(
                 ReplyMessageRequest(
